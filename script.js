@@ -1,6 +1,6 @@
 /**
- * Language Speaking Test - Telegram Web App Script
- * Features: Auto-finish vs Cancel distinction
+ * IELTS Speaking Test - Telegram Web App Script
+ * Features: 10s Countdown Start Screen, Auto-finish vs Cancel distinction
  */
 
 window.onload = function () {
@@ -10,59 +10,111 @@ window.onload = function () {
         window.Telegram.WebApp.ready();
     }
 
-    // 2. URL Parsing
+    // 2. Elements Mapping
+    const startScreen = document.getElementById('start-screen');
+    const appContent = document.getElementById('app-content');
+    const startButton = document.getElementById('start-button');
+    const countdownDisplay = document.getElementById('countdown-display');
+    const prepareMessage = document.getElementById('prepare-message');
+
+    const partHeader = document.querySelector('.part-header');
+    const questionText = document.querySelector('.question-text');
+    const progressBar = document.getElementById('progress-bar');
+    const imageSlot = document.getElementById('image-slot');
+    const questionImage = document.getElementById('question-image');
+    const cancelBtn = document.getElementById('cancel-btn');
+    const canvas = document.getElementById('visualizer');
+    const ctx = canvas.getContext('2d');
+
+    // 3. URL Parameters
     const urlParams = new URLSearchParams(window.location.search);
     const p = urlParams.get('p') || "1";
     const q = urlParams.get('q') || "Please answer the question accurately.";
     const t = parseInt(urlParams.get('t')) || 60;
     const img = urlParams.get('img');
 
-    // 3. UI Updates
-    const partHeader = document.querySelector('.part-header');
-    const questionText = document.querySelector('.question-text');
-    const progressBar = document.getElementById('progress-bar');
-    const imageSlot = document.getElementById('image-slot');
-    const questionImage = document.getElementById('question-image');
-    const cancelBtn = document.getElementById('cancel-btn'); // Renamed
-    const canvas = document.getElementById('visualizer');
-    const ctx = canvas.getContext('2d');
-
+    // 4. Initial UI Setup (Still from parameters)
     if (partHeader) partHeader.textContent = "PART " + p;
     if (questionText) questionText.textContent = q;
-
     if (img) {
         questionImage.src = img;
         imageSlot.classList.remove('hidden');
     }
 
-    // 4. Timer Logic
-    let timeLeft = t;
-    const startTime = Date.now();
-    const endTime = startTime + t * 1000;
-
-    const timerInterval = setInterval(() => {
-        const now = Date.now();
-        const diff = endTime - now;
-
-        if (diff <= 0) {
-            clearInterval(timerInterval);
-            autoFinish(); // Trigger auto-finish when timer reaches zero
-            return;
-        }
-
-        const percentage = (diff / (t * 1000)) * 100;
-        progressBar.style.width = `${percentage}%`;
-
-        if (percentage < 25) {
-            progressBar.style.background = '#ff4141';
-        } else if (percentage < 50) {
-            progressBar.style.background = '#ffcc00';
-        }
-    }, 50);
-
-    // 5. Audio Visualizer Setup
+    // 5. Global State
+    let timerInterval;
     let audioContext, analyser, dataArray, animationId;
 
+    // 6. Start Button Event
+    startButton.addEventListener('click', () => {
+        startButton.style.display = 'none';
+        countdownDisplay.style.display = 'block';
+        prepareMessage.style.display = 'block';
+
+        startPrepCountdown();
+    });
+
+    function startPrepCountdown() {
+        let count = 10;
+        countdownDisplay.textContent = count;
+
+        const countdownTimer = setInterval(() => {
+            count--;
+            countdownDisplay.textContent = count;
+
+            // Subtle pop animation
+            countdownDisplay.style.animation = 'none';
+            void countdownDisplay.offsetWidth; // trigger reflow
+            countdownDisplay.style.animation = 'scaleIn 0.5s ease';
+
+            if (count === 0) {
+                clearInterval(countdownTimer);
+                beginTest();
+            }
+        }, 1000);
+    }
+
+    function beginTest() {
+        // Hide Start Screen
+        startScreen.style.opacity = '0';
+        startScreen.style.visibility = 'hidden';
+
+        // Show Content
+        appContent.style.visibility = 'visible';
+        appContent.style.opacity = '1';
+
+        // Initialize Audio and Main Timer
+        initAudio();
+        startMainTimer();
+    }
+
+    // 7. Main Timer Logic
+    function startMainTimer() {
+        const startTime = Date.now();
+        const endTime = startTime + t * 1000;
+
+        timerInterval = setInterval(() => {
+            const now = Date.now();
+            const diff = endTime - now;
+
+            if (diff <= 0) {
+                clearInterval(timerInterval);
+                autoFinish();
+                return;
+            }
+
+            const percentage = (diff / (t * 1000)) * 100;
+            progressBar.style.width = `${percentage}%`;
+
+            if (percentage < 25) {
+                progressBar.style.background = '#ff4141';
+            } else if (percentage < 50) {
+                progressBar.style.background = '#ffcc00';
+            }
+        }, 50);
+    }
+
+    // 8. Real-time Audio Visualizer
     async function initAudio() {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -80,7 +132,7 @@ window.onload = function () {
 
             draw();
         } catch (err) {
-            console.error("Microphone error:", err);
+            console.error("Microphone access error:", err);
             drawFallback();
         }
     }
@@ -129,8 +181,9 @@ window.onload = function () {
         fallbackOffset += 0.1;
     }
 
-    // 6. AUTO-FINISH ONLY (Sends Data)
+    // 9. Completion Logic
     function autoFinish() {
+        console.log("Timer expired. Auto-submitting data...");
         cleanup();
 
         const result = {
@@ -146,7 +199,6 @@ window.onload = function () {
         }
     }
 
-    // 7. CANCEL LOGIC (No Data Sent)
     function cancelTest() {
         console.log("Test cancelled by user.");
         cleanup();
@@ -165,7 +217,4 @@ window.onload = function () {
     if (cancelBtn) {
         cancelBtn.addEventListener('click', cancelTest);
     }
-
-    // Auto-start
-    initAudio();
 };
