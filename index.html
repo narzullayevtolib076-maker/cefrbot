@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Speaking Test</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div id="progress-bar-container">
+        <div id="progress-bar"></div>
+    </div>
+
+    <header>
+        <div id="part-indicator" class="part-header">PART 1</div>
+    </header>
+
+    <main>
+        <div id="question-container">
+            <h1 id="question-text" class="question-text">Loading question...</h1>
+        </div>
+
+        <div id="image-slot" class="hidden">
+            <img id="question-image" src="" alt="Question Image">
+        </div>
+    </main>
+
+    <footer>
+        <div id="visualizer-container">
+            <canvas id="visualizer"></canvas>
+        </div>
+        <div id="status-container">
+            <span id="recording-dot"></span>
+            <span id="status-text">Recording...</span>
+        </div>
+        <button id="cancel-btn">Cancel</button>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
