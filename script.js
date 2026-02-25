@@ -4,6 +4,7 @@
  */
 
 // --- CONFIGURATION ---
+// "webhook-test" so'zini "webhook" ga almashtiring
 const N8N_UPLOAD_URL = "https://infotutor.app.n8n.cloud/webhook/voice-analysis";
 const N8N_GET_QUESTION_URL = "https://infotutor.app.n8n.cloud/webhook/get-question";
 
@@ -282,6 +283,7 @@ window.onload = function () {
 
     if (cancelBtn) cancelBtn.addEventListener('click', cancelTest);
 };
+
 
 
 
