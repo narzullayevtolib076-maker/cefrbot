@@ -1,24 +1,30 @@
 /**
  * IELTS Speaking Test - Telegram Web App Script
- * Features: 10s Countdown Start Screen, Auto-finish vs Cancel distinction
+ * Features: Dynamic Part Selection, n8n Question Fetch, Audio Recording, Webhook Integration
  */
 
+// --- CONFIGURATION ---
+const N8N_UPLOAD_URL = "SIZNING_WEBHOOK_URL_MANZILINGIZ";
+const N8N_GET_QUESTION_URL = "SIZNING_N8N_GET_QUESTION_URL";
+
 window.onload = function () {
-    // 1. Initialize Telegram Web App
-    if (window.Telegram && window.Telegram.WebApp) {
-        window.Telegram.WebApp.expand();
-        window.Telegram.WebApp.ready();
+    const tg = window.Telegram.WebApp;
+    if (tg) {
+        tg.expand();
+        tg.ready();
     }
 
-    // 2. Elements Mapping
+    // Elements Mapping
     const startScreen = document.getElementById('start-screen');
     const appContent = document.getElementById('app-content');
-    const startButton = document.getElementById('start-button');
+    const partButtons = document.getElementById('part-buttons');
+    const selectionTitle = document.getElementById('selection-title');
+    const loadingSpinner = document.getElementById('loading-spinner');
     const countdownDisplay = document.getElementById('countdown-display');
     const prepareMessage = document.getElementById('prepare-message');
 
-    const partHeader = document.querySelector('.part-header');
-    const questionText = document.querySelector('.question-text');
+    const partHeaderText = document.querySelector('.part-header');
+    const questionElement = document.querySelector('.question-text');
     const progressBar = document.getElementById('progress-bar');
     const imageSlot = document.getElementById('image-slot');
     const questionImage = document.getElementById('question-image');
@@ -26,34 +32,70 @@ window.onload = function () {
     const canvas = document.getElementById('visualizer');
     const ctx = canvas.getContext('2d');
 
-    // 3. URL Parameters
-    const urlParams = new URLSearchParams(window.location.search);
-    const p = urlParams.get('p') || "1";
-    const q = urlParams.get('q') || "Please answer the question accurately.";
-    const t = parseInt(urlParams.get('t')) || 60;
-    const img = urlParams.get('img');
+    // State Variables
+    let currentPart = "1";
+    let currentQuestion = "";
+    let currentTimeLimit = 60;
+    let currentImageUrl = null;
 
-    // 4. Initial UI Setup (Still from parameters)
-    if (partHeader) partHeader.textContent = "PART " + p;
-    if (questionText) questionText.textContent = q;
-    if (img) {
-        questionImage.src = img;
-        imageSlot.classList.remove('hidden');
-    }
-
-    // 5. Global State
     let timerInterval;
     let audioContext, analyser, dataArray, animationId;
+    let mediaRecorder;
+    let audioChunks = [];
 
-    // 6. Start Button Event
-    startButton.addEventListener('click', () => {
-        startButton.style.display = 'none';
-        countdownDisplay.style.display = 'block';
-        prepareMessage.style.display = 'block';
+    // 1. SELECT PART & FETCH QUESTION
+    window.selectPart = async function (partNum) {
+        // Show Loading UI
+        partButtons.style.display = 'none';
+        selectionTitle.style.display = 'none';
+        loadingSpinner.style.display = 'flex';
+        loadingSpinner.classList.remove('hidden');
+        loadingSpinner.classList.add('visible');
 
-        startPrepCountdown();
-    });
+        try {
+            const response = await fetch(N8N_GET_QUESTION_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ part: partNum })
+            });
 
+            if (!response.ok) throw new Error("Savolni yuklab bo'lmadi");
+
+            const data = await response.json();
+
+            // Priority to n8n data, fallback to defaults/params
+            currentPart = data.part || partNum;
+            currentQuestion = data.question || "No question provided.";
+            currentTimeLimit = parseInt(data.time) || 60;
+            currentImageUrl = data.image || null;
+
+            // Setup UI for Main Test
+            if (partHeaderText) partHeaderText.textContent = "PART " + currentPart;
+            if (questionElement) questionElement.textContent = currentQuestion;
+            if (currentImageUrl) {
+                questionImage.src = currentImageUrl;
+                imageSlot.classList.remove('hidden');
+            } else {
+                imageSlot.classList.add('hidden');
+            }
+
+            // Hide Loading, Start Countdown
+            loadingSpinner.style.display = 'none';
+            countdownDisplay.style.display = 'block';
+            prepareMessage.style.display = 'block';
+            startPrepCountdown();
+
+        } catch (error) {
+            console.error("Fetch Error:", error);
+            tg.showAlert("Xatolik: Savolni yuklashda muammo yuz berdi. Iltimos, qayta urinib ko'ring.");
+            // Reset UI
+            partButtons.style.display = 'flex';
+            selectionTitle.style.display = 'block';
+            loadingSpinner.style.display = 'none';
+        }
+    };
+
+    // 2. PREP COUNTDOWN
     function startPrepCountdown() {
         let count = 10;
         countdownDisplay.textContent = count;
@@ -62,9 +104,8 @@ window.onload = function () {
             count--;
             countdownDisplay.textContent = count;
 
-            // Subtle pop animation
             countdownDisplay.style.animation = 'none';
-            void countdownDisplay.offsetWidth; // trigger reflow
+            void countdownDisplay.offsetWidth;
             countdownDisplay.style.animation = 'scaleIn 0.5s ease';
 
             if (count === 0) {
@@ -75,23 +116,21 @@ window.onload = function () {
     }
 
     function beginTest() {
-        // Hide Start Screen
         startScreen.style.opacity = '0';
         startScreen.style.visibility = 'hidden';
+        setTimeout(() => startScreen.style.display = 'none', 500);
 
-        // Show Content
         appContent.style.visibility = 'visible';
         appContent.style.opacity = '1';
 
-        // Initialize Audio and Main Timer
         initAudio();
         startMainTimer();
     }
 
-    // 7. Main Timer Logic
+    // 3. MAIN TEST TIMER
     function startMainTimer() {
         const startTime = Date.now();
-        const endTime = startTime + t * 1000;
+        const endTime = startTime + currentTimeLimit * 1000;
 
         timerInterval = setInterval(() => {
             const now = Date.now();
@@ -103,7 +142,7 @@ window.onload = function () {
                 return;
             }
 
-            const percentage = (diff / (t * 1000)) * 100;
+            const percentage = (diff / (currentTimeLimit * 1000)) * 100;
             progressBar.style.width = `${percentage}%`;
 
             if (percentage < 25) {
@@ -114,14 +153,14 @@ window.onload = function () {
         }, 50);
     }
 
-    // 8. Real-time Audio Visualizer
+    // 4. AUDIO & VISUALIZER
     async function initAudio() {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
             analyser = audioContext.createAnalyser();
             const source = audioContext.createMediaStreamSource(stream);
-
             analyser.fftSize = 256;
             dataArray = new Uint8Array(analyser.frequencyBinCount);
             source.connect(analyser);
@@ -129,10 +168,22 @@ window.onload = function () {
             canvas.width = canvas.offsetWidth * window.devicePixelRatio;
             canvas.height = canvas.offsetHeight * window.devicePixelRatio;
             ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-
             draw();
+
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
+
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) audioChunks.push(e.data);
+            };
+
+            mediaRecorder.onstop = async () => {
+                if (window.isAutoFinish) await uploadRecording();
+            };
+
+            mediaRecorder.start();
         } catch (err) {
-            console.error("Microphone access error:", err);
+            console.error("Mic Access Error:", err);
             drawFallback();
         }
     }
@@ -170,7 +221,7 @@ window.onload = function () {
         ctx.clearRect(0, 0, displayWidth, displayHeight);
         ctx.beginPath();
         ctx.lineWidth = 3;
-        ctx.strokeStyle = '#00d2ff';
+        ctx.strokeStyle = '#ff4141';
         ctx.lineCap = 'round';
         for (let x = 0; x < displayWidth; x++) {
             const y = displayHeight / 2 + Math.sin(x * 0.05 + fallbackOffset) * 12;
@@ -181,40 +232,53 @@ window.onload = function () {
         fallbackOffset += 0.1;
     }
 
-    // 9. Completion Logic
-    function autoFinish() {
-        console.log("Timer expired. Auto-submitting data...");
-        cleanup();
+    // 5. UPLOAD TO n8n
+    async function uploadRecording() {
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        const chatId = tg.initDataUnsafe?.user?.id || "unknown";
 
-        const result = {
-            status: "auto_finished",
-            part: p,
-            question: q,
-            duration: t
-        };
+        const formData = new FormData();
+        formData.append('audio', audioBlob, `speaking_${currentPart}_${chatId}.webm`);
+        formData.append('part', currentPart);
+        formData.append('question', currentQuestion);
+        formData.append('chat_id', chatId);
 
-        if (window.Telegram && window.Telegram.WebApp) {
-            window.Telegram.WebApp.sendData(JSON.stringify(result));
-            window.Telegram.WebApp.close();
+        try {
+            const response = await fetch(N8N_UPLOAD_URL, {
+                method: 'POST',
+                body: formData
+            });
+
+            if (response.ok) {
+                tg.showAlert("Imtihon yakunlandi. Ovoz muvaffaqiyatli yuborildi!", () => {
+                    tg.close();
+                });
+            } else {
+                throw new Error("Upload fail");
+            }
+        } catch (e) {
+            console.error(e);
+            tg.showAlert("Xatolik: Ovozni yuborishda muammo yuz berdi.");
         }
     }
 
-    function cancelTest() {
-        console.log("Test cancelled by user.");
+    function autoFinish() {
+        window.isAutoFinish = true;
         cleanup();
-        if (window.Telegram && window.Telegram.WebApp) {
-            window.Telegram.WebApp.close();
-        }
+    }
+
+    function cancelTest() {
+        window.isAutoFinish = false;
+        cleanup();
+        if (tg) tg.close();
     }
 
     function cleanup() {
         clearInterval(timerInterval);
         if (animationId) cancelAnimationFrame(animationId);
         if (audioContext) audioContext.close();
+        if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
     }
 
-    // Event Listeners
-    if (cancelBtn) {
-        cancelBtn.addEventListener('click', cancelTest);
-    }
+    if (cancelBtn) cancelBtn.addEventListener('click', cancelTest);
 };
