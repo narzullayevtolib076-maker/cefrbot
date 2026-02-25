@@ -16,7 +16,16 @@
     <!-- Start Screen -->
     <div id="start-screen">
         <div id="start-container">
-            <button id="start-button">START TEST</button>
+            <h2 id="selection-title">CHOOSE A PART</h2>
+            <div id="part-buttons">
+                <button class="part-select-btn" onclick="selectPart(1)">PART 1</button>
+                <button class="part-select-btn" onclick="selectPart(2)">PART 2</button>
+                <button class="part-select-btn" onclick="selectPart(3)">PART 3</button>
+            </div>
+            <div id="loading-spinner" class="hidden">
+                <div class="spinner"></div>
+                <p>SAVOL YUKLANMOQDA...</p>
+            </div>
             <h1 id="countdown-display">10</h1>
             <p id="prepare-message">GET READY!</p>
         </div>
