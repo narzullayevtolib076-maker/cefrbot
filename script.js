@@ -4,8 +4,8 @@
  */
 
 // --- CONFIGURATION ---
-const N8N_UPLOAD_URL = "SIZNING_WEBHOOK_URL_MANZILINGIZ";
-const N8N_GET_QUESTION_URL = "SIZNING_N8N_GET_QUESTION_URL";
+const N8N_UPLOAD_URL = "const N8N_UPLOAD_URL = "https://infotutor.app.n8n.cloud/webhook-test/voice-analysis";
+const N8N_GET_QUESTION_URL = "const N8N_GET_QUESTION_URL = "https://infotutor.app.n8n.cloud/webhook-test/get-question";
 
 window.onload = function () {
     const tg = window.Telegram.WebApp;
@@ -282,3 +282,4 @@ window.onload = function () {
 
     if (cancelBtn) cancelBtn.addEventListener('click', cancelTest);
 };
+
