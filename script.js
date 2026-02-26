@@ -1,10 +1,11 @@
 /**
- * IELTS Speaking Test - Telegram Web App Script (Full Optimized)
- * Features: Auto-UI update on finish, n8n Integration, Visualizer
+ * IELTS Speaking Test - Telegram Web App Script
+ * Features: Dynamic Part Selection, n8n Question Fetch, Audio Recording, Webhook Integration
  */
 
-const N8N_UPLOAD_URL = "https://infotutor.app.n8n.cloud/webhook/voice-analysis";
-const N8N_GET_QUESTION_URL = "https://infotutor.app.n8n.cloud/webhook/get-question";
+// --- CONFIGURATION ---
+const N8N_UPLOAD_URL = "SIZNING_WEBHOOK_URL_MANZILINGIZ";
+const N8N_GET_QUESTION_URL = "SIZNING_N8N_GET_QUESTION_URL";
 
 window.onload = function () {
     const tg = window.Telegram.WebApp;
@@ -13,7 +14,7 @@ window.onload = function () {
         tg.ready();
     }
 
-    // Elements
+    // Elements Mapping
     const startScreen = document.getElementById('start-screen');
     const appContent = document.getElementById('app-content');
     const partButtons = document.getElementById('part-buttons');
@@ -21,63 +22,118 @@ window.onload = function () {
     const loadingSpinner = document.getElementById('loading-spinner');
     const countdownDisplay = document.getElementById('countdown-display');
     const prepareMessage = document.getElementById('prepare-message');
+
     const partHeaderText = document.querySelector('.part-header');
     const questionElement = document.querySelector('.question-text');
     const progressBar = document.getElementById('progress-bar');
+    const imageSlot = document.getElementById('image-slot');
+    const questionImage = document.getElementById('question-image');
     const cancelBtn = document.getElementById('cancel-btn');
-    const recordingStatus = document.querySelector('.recording-status') || document.createElement('div');
     const canvas = document.getElementById('visualizer');
     const ctx = canvas.getContext('2d');
 
-    // State
+    // State Variables
+    let questionsList = [];
+    let currentIndex = 0;
+    const TOTAL_QUESTIONS = 5;
+
     let currentPart = "1";
     let currentQuestion = "";
     let currentTimeLimit = 60;
-    let isAutoFinish = false;
+    let currentImageUrl = null;
+
     let timerInterval;
     let audioContext, analyser, dataArray, animationId;
     let mediaRecorder;
     let audioChunks = [];
-    let streamRef = null;
 
-    // 1. FETCH QUESTION
+    // 1. SELECT PART & FETCH QUESTION
     window.selectPart = async function (partNum) {
+        // Show Loading UI
         partButtons.style.display = 'none';
         selectionTitle.style.display = 'none';
         loadingSpinner.style.display = 'flex';
+        loadingSpinner.classList.remove('hidden');
+        loadingSpinner.classList.add('visible');
 
         try {
             const response = await fetch(N8N_GET_QUESTION_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ part: partNum })
+                body: JSON.stringify({ part: partNum, count: TOTAL_QUESTIONS })
             });
+
+            if (!response.ok) throw new Error("Savollarni yuklab bo'lmadi");
+
             const data = await response.json();
-            currentPart = data.part || partNum;
-            currentQuestion = data.question || "No question provided.";
-            currentTimeLimit = parseInt(data.time) || 60;
+            // Expected data format: [{"q": "...", "t": 30, "img": "..."}, ...]
+            questionsList = Array.isArray(data) ? data : [data];
+            currentIndex = 0;
+            currentPart = partNum;
 
-            partHeaderText.textContent = "PART " + currentPart;
-            questionElement.textContent = currentQuestion;
+            showNextQuestion();
 
-            loadingSpinner.style.display = 'none';
-            countdownDisplay.style.display = 'block';
-            prepareMessage.style.display = 'block';
-            startPrepCountdown();
         } catch (error) {
-            tg.showAlert("Savollarni yuklab bo'lmadi.");
-            loadingSpinner.style.display = 'none';
+            console.error("Fetch Error:", error);
+            tg.showAlert("Xatolik: Savollarni yuklashda muammo yuz berdi. Iltimos, qayta urinib ko'ring.");
+            // Reset UI
             partButtons.style.display = 'flex';
+            selectionTitle.style.display = 'block';
+            loadingSpinner.style.display = 'none';
         }
     };
 
-    // 2. COUNTDOWN
+    function showNextQuestion() {
+        if (currentIndex >= questionsList.length) {
+            tg.showAlert("Tabriklaymiz! Barcha savollarga javob berdingiz.", () => {
+                tg.close();
+            });
+            return;
+        }
+
+        const qData = questionsList[currentIndex];
+        currentQuestion = qData.q || qData.question || "No question provided.";
+        currentTimeLimit = parseInt(qData.t) || parseInt(qData.time) || 60;
+        currentImageUrl = qData.img || qData.image || null;
+
+        // Setup UI
+        if (partHeaderText) partHeaderText.textContent = `PART ${currentPart} (${currentIndex + 1}/${questionsList.length})`;
+        if (questionElement) questionElement.textContent = currentQuestion;
+
+        if (currentImageUrl) {
+            questionImage.src = currentImageUrl;
+            imageSlot.classList.remove('hidden');
+        } else {
+            imageSlot.classList.add('hidden');
+        }
+
+        // Reset for new question UI
+        startScreen.style.display = 'flex';
+        startScreen.style.opacity = '1';
+        startScreen.style.visibility = 'visible';
+        appContent.style.opacity = '0';
+        appContent.style.visibility = 'hidden';
+
+        loadingSpinner.style.display = 'none';
+        countdownDisplay.style.display = 'block';
+        prepareMessage.style.display = 'block';
+
+        startPrepCountdown();
+    }
+
+    // 2. PREP COUNTDOWN
     function startPrepCountdown() {
         let count = 10;
         countdownDisplay.textContent = count;
+
         const countdownTimer = setInterval(() => {
             count--;
             countdownDisplay.textContent = count;
+
+            countdownDisplay.style.animation = 'none';
+            void countdownDisplay.offsetWidth;
+            countdownDisplay.style.animation = 'scaleIn 0.5s ease';
+
             if (count === 0) {
                 clearInterval(countdownTimer);
                 beginTest();
@@ -86,14 +142,18 @@ window.onload = function () {
     }
 
     function beginTest() {
-        startScreen.style.display = 'none';
+        startScreen.style.opacity = '0';
+        startScreen.style.visibility = 'hidden';
+        setTimeout(() => startScreen.style.display = 'none', 500);
+
         appContent.style.visibility = 'visible';
         appContent.style.opacity = '1';
+
         initAudio();
         startMainTimer();
     }
 
-    // 3. TIMER
+    // 3. MAIN TEST TIMER
     function startMainTimer() {
         const startTime = Date.now();
         const endTime = startTime + currentTimeLimit * 1000;
@@ -107,109 +167,155 @@ window.onload = function () {
                 autoFinish();
                 return;
             }
+
             const percentage = (diff / (currentTimeLimit * 1000)) * 100;
             progressBar.style.width = `${percentage}%`;
+
+            if (percentage < 25) {
+                progressBar.style.background = '#ff4141';
+            } else if (percentage < 50) {
+                progressBar.style.background = '#ffcc00';
+            }
         }, 50);
     }
 
-    // 4. AUDIO
+    // 4. AUDIO & VISUALIZER
     async function initAudio() {
         try {
-            streamRef = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
             analyser = audioContext.createAnalyser();
-            const source = audioContext.createMediaStreamSource(streamRef);
-            analyser.fftSize = 128;
+            const source = audioContext.createMediaStreamSource(stream);
+            analyser.fftSize = 256;
             dataArray = new Uint8Array(analyser.frequencyBinCount);
             source.connect(analyser);
 
-            canvas.width = canvas.offsetWidth;
-            canvas.height = canvas.offsetHeight;
+            canvas.width = canvas.offsetWidth * window.devicePixelRatio;
+            canvas.height = canvas.offsetHeight * window.devicePixelRatio;
+            ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
             draw();
 
-            mediaRecorder = new MediaRecorder(streamRef);
+            mediaRecorder = new MediaRecorder(stream);
             audioChunks = [];
-            mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
-            mediaRecorder.onstop = async () => { if (isAutoFinish) await uploadRecording(); };
+
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) audioChunks.push(e.data);
+            };
+
+            mediaRecorder.onstop = async () => {
+                if (window.isAutoFinish) await uploadRecording();
+            };
+
             mediaRecorder.start();
         } catch (err) {
-            tg.showAlert("Mikrofonni yoqing!");
+            console.error("Mic Access Error:", err);
+            drawFallback();
         }
     }
 
     function draw() {
+        const displayWidth = canvas.offsetWidth;
+        const displayHeight = canvas.offsetHeight;
         animationId = requestAnimationFrame(draw);
         analyser.getByteFrequencyData(dataArray);
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.clearRect(0, 0, displayWidth, displayHeight);
+
+        const barWidth = (displayWidth / dataArray.length) * 2.5;
         let x = 0;
-        const barWidth = (canvas.width / dataArray.length) * 2;
         for (let i = 0; i < dataArray.length; i++) {
-            let barHeight = (dataArray[i] / 255) * canvas.height;
-            ctx.fillStyle = '#00d2ff';
-            ctx.fillRect(x, canvas.height - barHeight, barWidth - 1, barHeight);
+            let barHeight = (dataArray[i] / 255) * displayHeight;
+            const gradient = ctx.createLinearGradient(0, displayHeight, 0, displayHeight - barHeight);
+            gradient.addColorStop(0, 'rgba(0, 210, 255, 0.1)');
+            gradient.addColorStop(1, '#00d2ff');
+            ctx.fillStyle = gradient;
+            ctx.shadowBlur = 8;
+            ctx.shadowColor = '#00d2ff';
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(x, displayHeight - barHeight, barWidth - 2, barHeight, 4);
+            else ctx.rect(x, displayHeight - barHeight, barWidth - 2, barHeight);
+            ctx.fill();
             x += barWidth;
         }
     }
 
-    // 5. AUTO FINISH & UPLOAD
-    function autoFinish() {
-        isAutoFinish = true;
-        
-        // INTERFEYSNI O'ZGARTIRISH
-        if (recordingStatus) recordingStatus.textContent = "⌛ SENDING TO AI...";
-        if (cancelBtn) cancelBtn.style.display = 'none'; // Foydalanuvchi adashib bosmasligi uchun yashiramiz
-        
-        if (mediaRecorder && mediaRecorder.state === 'recording') {
-            mediaRecorder.stop();
+    let fallbackOffset = 0;
+    function drawFallback() {
+        const displayWidth = canvas.offsetWidth;
+        const displayHeight = canvas.offsetHeight;
+        animationId = requestAnimationFrame(drawFallback);
+        ctx.clearRect(0, 0, displayWidth, displayHeight);
+        ctx.beginPath();
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = '#ff4141';
+        ctx.lineCap = 'round';
+        for (let x = 0; x < displayWidth; x++) {
+            const y = displayHeight / 2 + Math.sin(x * 0.05 + fallbackOffset) * 12;
+            if (x === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
         }
-        cleanup(false);
+        ctx.stroke();
+        fallbackOffset += 0.1;
     }
 
+    // 5. UPLOAD TO n8n
     async function uploadRecording() {
-        if (loadingSpinner) {
-            loadingSpinner.style.display = 'flex';
-            loadingSpinner.querySelector('p').textContent = "Analyzing your speech...";
-        }
+        if (audioChunks.length === 0) return;
 
         const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
         const chatId = tg.initDataUnsafe?.user?.id || "unknown";
 
         const formData = new FormData();
-        formData.append('audio', audioBlob, `speaking_${currentPart}_${chatId}.webm`);
-        formData.append('chat_id', chatId);
+        formData.append('audio', audioBlob, `speaking_${currentPart}_q${currentIndex + 1}_${chatId}.webm`);
         formData.append('part', currentPart);
+        formData.append('question_index', currentIndex + 1);
         formData.append('question', currentQuestion);
+        formData.append('chat_id', chatId);
+        formData.append('is_last', (currentIndex + 1 >= questionsList.length) ? "true" : "false");
 
         try {
-            const response = await fetch(N8N_UPLOAD_URL, { method: 'POST', body: formData });
-            if (response.ok) {
-                tg.showAlert("✅ Tahlil yakunlandi! Natijani Telegram botingizga yubordik.", () => {
+            // Show subtle indicator? Maybe not needed for sequential
+            const response = await fetch(N8N_UPLOAD_URL, {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) throw new Error("Upload fail");
+
+            // Move to next question
+            currentIndex++;
+            if (currentIndex < questionsList.length) {
+                showNextQuestion();
+            } else {
+                tg.showAlert("Imtihon yakunlandi. Barcha javoblar tahlil uchun yuborildi!", () => {
                     tg.close();
                 });
-            } else {
-                throw new Error();
             }
+
         } catch (e) {
-            tg.showAlert("❌ Xatolik: Ovoz yuborilmadi.");
-            if (cancelBtn) cancelBtn.style.display = 'block';
-        } finally {
-            if (loadingSpinner) loadingSpinner.style.display = 'none';
+            console.error(e);
+            tg.showAlert("Xatolik: Ovozni yuborishda muammo yuz berdi. Keyingi savolga o'tilmoqda.");
+            currentIndex++;
+            showNextQuestion();
         }
+    }
+
+    function autoFinish() {
+        window.isAutoFinish = true;
+        cleanup();
     }
 
     function cancelTest() {
-        isAutoFinish = false;
-        cleanup(true);
+        window.isAutoFinish = false;
+        cleanup();
         if (tg) tg.close();
     }
 
-    function cleanup(stopMic) {
+    function cleanup() {
         clearInterval(timerInterval);
         if (animationId) cancelAnimationFrame(animationId);
         if (audioContext) audioContext.close();
-        if (stopMic && streamRef) {
-            streamRef.getTracks().forEach(track => track.stop());
-        }
+        if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
     }
 
     if (cancelBtn) cancelBtn.addEventListener('click', cancelTest);
